@@ -1,0 +1,19 @@
+{
+  "name": "rotary-simulation",
+  "module": "build.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun src/index.html",
+    "build": "bun build.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "terser": "^5.51.2"
+  }
+}

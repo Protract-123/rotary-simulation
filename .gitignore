@@ -1,0 +1,6 @@
+# Editor/IDE
+.wakatime-project
+.idea/
+.vscode/
+
+node_modules
