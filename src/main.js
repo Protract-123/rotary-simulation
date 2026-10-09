@@ -116,7 +116,7 @@ for (let flank = 0; flank < 3; flank++) {
     extrude(rotor, rotor.map(([x, y]) => internalGear(atan2(y, x))), ECCENTRICITY);
 }
 
-const canvas = window.c;
+const canvas = c;
 canvas.width = canvas.height = 800 * devicePixelRatio;
 const gl = canvas.getContext('webgl2');
 
@@ -143,12 +143,34 @@ gl.enableVertexAttribArray(positionLoc);
 gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
 
 const timeUniform = gl.getUniformLocation(program, 'time');
+const rotationUniform = gl.getUniformLocation(program, 'rotation');
+const rpsUniform = gl.getUniformLocation(program, 'rps');
+
 gl.enable(gl.DEPTH_TEST);
 
+let xrot = 0
+let yrot = 0
+let rps = 2*PI // 60RPM
+let scrollDirection = 0;
+
 function draw(timeMs) {
+    if (scrollDirection === -1) rps /= 2
+    else if (scrollDirection === 1) rps *= 2
+    scrollDirection = 0
+
     gl.uniform1f(timeUniform, timeMs / 1000);
+    gl.uniform2f(rotationUniform, xrot, yrot)
+    gl.uniform1f(rpsUniform, rps)
+
     gl.drawArrays(gl.TRIANGLES, 0, positions.length / 4);
     requestAnimationFrame(draw);
 }
 
 requestAnimationFrame(draw);
+
+onmousemove = event => {
+    xrot = (.5 - event.y / innerHeight) * PI;
+    yrot = (event.x / innerWidth - .5) * PI
+}
+
+onwheel = event => scrollDirection = sign(event.deltaY)
