@@ -127,17 +127,10 @@ let rps = 0;
 let throttle = 0;
 
 let shaftAngle = 0
-let previousTimeMs = 0
 
 function draw(timeMs) {
-    if (rps) {
-        shaftAngle += rps * (timeMs - previousTimeMs) / 1000
-        rps += (timeMs-previousTimeMs) * throttle * 0.1
-        rps = rps < 1.1 ? 1.1 : (rps > 1256.7 ? 1256.7 : rps)
-    }
     f.innerText = `mouse = rotate\nclick = start\nw/s = accel\nRPM = ${rps * 9.549 | 0}`
 
-    previousTimeMs = timeMs
     gl.vertexAttrib3f(rotationAndShaftAngleLocation, xrot, yrot, shaftAngle)
 
     gl.drawArrays(gl.TRIANGLES, 0, positions.length / 4);
@@ -149,10 +142,10 @@ requestAnimationFrame(draw);
 // Audio
 
 const audioContext = new AudioContext({sampleRate: 48000});
-const soundProcessor = audioContext.createScriptProcessor(0, 0, 1)
+const soundProcessor = audioContext.createScriptProcessor(256, 0, 1)
 soundProcessor.connect(audioContext.destination);
 
-let soundPhase = .75;
+let soundPhase = 0;
 let timingJitter = 1;
 let lowCut = 0;
 let resonanceLow = 0;
@@ -164,11 +157,15 @@ let edgeSmooth = 0;
 soundProcessor.onaudioprocess = event => {
     const output = event.outputBuffer.getChannelData(0)
     for (let i = 0; i < output.length; ++i) {
-        const phase = (soundPhase + rps / (2 * PI * 48000) * timingJitter) % 1
-        if (phase < soundPhase) timingJitter = 1 + (random() - .5) / 50;
-        soundPhase = phase
+        shaftAngle += rps / 48000
+        rps += throttle / 480
+        rps = rps < 1.1 ? 1.1 : (rps > 1256.7 ? 1256.7 : rps)
 
-        const pulses =  (exp(-13 * phase));
+        const phase = (shaftAngle / (2 * PI) + .75) % 1;
+        if (phase < soundPhase) timingJitter = (random() - .5) / 50;
+        soundPhase = phase;
+
+        const pulses =  (exp(-13 * (phase+timingJitter)));
 
         lowCut += .05 * (pulses - lowCut);
         resonanceLow += .03 * resonanceBand;
