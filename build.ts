@@ -16,31 +16,31 @@ const GLSL_TOKEN_PATTERNS: [GlslToken["kind"], RegExp][] = [
     ["symbol", /./y],
 ];
 
-const MULTI_CHARACTER_OPERATORS_LONGEST_FIRST = [
+const MULTI_CHARACTER_OPERATORS = [
     "<<=", ">>=",
     "++", "--", "&&", "||", "^^", "<<", ">>",
     "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
 ];
 
-const GLSL_TYPE_NAMES = new Set([
+const GLSL_TYPES = new Set([
     "void", "bool", "int", "uint", "float",
     ...["vec", "bvec", "ivec", "uvec"].flatMap(vector => [vector + 2, vector + 3, vector + 4]),
     "mat2", "mat3", "mat4", "mat2x3", "mat2x4", "mat3x2", "mat3x4", "mat4x2", "mat4x3",
 ]);
 
-const GLSL_KEYWORDS_AS_SHORT_AS_GENERATED_NAMES = ["do", "if", "in"];
+const GLSL_KEYWORDS = ["do", "if", "in"];
 
-function tokenizeGlsl(code: string) {
+function tokenizeGlsl(glsl: string) {
     const tokens: GlslToken[] = [];
     let position = 0;
-    while (position < code.length) {
+    while (position < glsl.length) {
         for (const [kind, pattern] of GLSL_TOKEN_PATTERNS) {
             pattern.lastIndex = position;
-            const match = pattern.exec(code);
+            const match = pattern.exec(glsl);
             if (!match) continue;
 
             const operator = kind === "symbol"
-                ? MULTI_CHARACTER_OPERATORS_LONGEST_FIRST.find(op => code.startsWith(op, position))
+                ? MULTI_CHARACTER_OPERATORS.find(op => glsl.startsWith(op, position))
                 : undefined;
             const text = operator ?? match[0];
             tokens.push({ kind, text });
@@ -51,11 +51,11 @@ function tokenizeGlsl(code: string) {
     return tokens;
 }
 
-function significantGlslTokens(code: string) {
-    return tokenizeGlsl(code).filter(token => token.kind !== "space" && token.kind !== "comment");
+function stripGlsl(glsl: string) {
+    return tokenizeGlsl(glsl).filter(token => token.kind !== "space" && token.kind !== "comment");
 }
 
-const isGlslType = (name: string) => GLSL_TYPE_NAMES.has(name) || name.startsWith("sampler");
+const isGlslType = (name: string) => GLSL_TYPES.has(name) || name.startsWith("sampler");
 const isMemberAccess = (tokens: GlslToken[], index: number) => tokens[index - 1]?.text === ".";
 
 function findDeclaredNames(tokens: GlslToken[]) {
@@ -105,12 +105,12 @@ function shortenNumberLiteral(literal: string) {
     return (whole || fraction ? whole : "0") + "." + fraction + exponent;
 }
 
-function wouldMergeIntoOneToken(left: GlslToken, right: GlslToken) {
+function tokensWouldMerge(left: GlslToken, right: GlslToken) {
     const isWordLike = (token: GlslToken) => token.kind === "name" || token.kind === "number";
     if (isWordLike(left) && isWordLike(right)) return true;
     if (left.kind !== "symbol" || right.kind !== "symbol") return false;
 
-    const operatorReadBack = MULTI_CHARACTER_OPERATORS_LONGEST_FIRST.find(op => (left.text + right.text).startsWith(op));
+    const operatorReadBack = MULTI_CHARACTER_OPERATORS.find(op => (left.text + right.text).startsWith(op));
     return operatorReadBack !== undefined && operatorReadBack.length > left.text.length;
 }
 
@@ -120,11 +120,11 @@ function collapseDirective(directive: string) {
 }
 
 function createGlslMinifier(allShaderSources: string[]) {
-    const tokenizedShaders = allShaderSources.map(significantGlslTokens);
+    const tokenizedShaders = allShaderSources.map(stripGlsl);
     const declaredNames = new Set(tokenizedShaders.flatMap(tokens => [...findDeclaredNames(tokens)]));
 
     const useCounts = new Map<string, number>();
-    const unavailableNames = new Set(GLSL_KEYWORDS_AS_SHORT_AS_GENERATED_NAMES);
+    const unavailableNames = new Set(GLSL_KEYWORDS);
     for (const tokens of tokenizedShaders) {
         tokens.forEach((token, index) => {
             if (token.kind !== "name" || isMemberAccess(tokens, index)) return;
@@ -149,7 +149,7 @@ function createGlslMinifier(allShaderSources: string[]) {
     }
 
     function minifyShader(code: string) {
-        const tokens = significantGlslTokens(code);
+        const tokens = stripGlsl(code);
         let output = "";
         let previous: GlslToken | undefined;
 
@@ -162,7 +162,7 @@ function createGlslMinifier(allShaderSources: string[]) {
             }
 
             const minified = minifyToken(token, isMemberAccess(tokens, index));
-            if (previous && wouldMergeIntoOneToken(previous, minified)) output += " ";
+            if (previous && tokensWouldMerge(previous, minified)) output += " ";
             output += minified.text;
             previous = minified;
         });
@@ -173,7 +173,7 @@ function createGlslMinifier(allShaderSources: string[]) {
     return { minifyShader, renames };
 }
 
-const WEBGL_CONSTANT_VALUES: Record<string, number> = {
+const WEBGL_CONSTANTS: Record<string, number> = {
     ARRAY_BUFFER: 34962,
     BLEND: 3042,
     COLOR_BUFFER_BIT: 16384,
@@ -197,7 +197,7 @@ const WEBGL_CONTEXT_ASSIGNMENT = /(\w+) = \w+\.getContext\(/g;
 const ATTRIBUTE_OR_UNIFORM_LOOKUP = /(getAttribLocation|getUniformLocation)\((\w+), "(\w+)"\)/g;
 
 function webglConstantValue(contextName: string, constantName: string) {
-    const value = WEBGL_CONSTANT_VALUES[constantName];
+    const value = WEBGL_CONSTANTS[constantName];
     if (value === undefined) {
         throw new Error(`Unknown WebGL constant ${contextName}.${constantName}: add its value to WEBGL_CONSTANT_VALUES`);
     }
@@ -212,7 +212,7 @@ function inlineWebglConstants(js: string) {
     return js;
 }
 
-function renameAttributeAndUniformLookups(js: string, shaderRenames: Map<string, string>) {
+function renameWebglLookups(js: string, shaderRenames: Map<string, string>) {
     return js.replace(ATTRIBUTE_OR_UNIFORM_LOOKUP, (_, method: string, program: string, name: string) => {
         const renamed = shaderRenames.get(name);
         if (!renamed) throw new Error(`${method}(${program}, "${name}"): no shader declares "${name}"`);
@@ -233,11 +233,12 @@ const minifyImportedShaders: BunPlugin = {
     },
 };
 
-const elementIdsThatAreAlsoGlobals: string[] = [];
+const globalElementIDs: string[] = [];
 const scriptSources: string[] = [];
-const pageWithoutCommentsOrWhitespaceBetweenTags = new HTMLRewriter()
+
+const strippedPage = new HTMLRewriter()
     .onDocument({ comments: comment => void comment.remove() })
-    .on("[id]", { element: element => void elementIdsThatAreAlsoGlobals.push(element.getAttribute("id")!) })
+    .on("[id]", { element: element => void globalElementIDs.push(element.getAttribute("id")!) })
     .on("script[src]", { element: element => void scriptSources.push(element.getAttribute("src")!) })
     .transform(readFileSync("src/index.html", "utf8"))
     .replace(/>\s+</g, "><")
@@ -248,12 +249,12 @@ async function bundleAndMinifyScript(entryPath: string) {
     if (!result.success) throw new AggregateError(result.logs, "Bundle failed: " + entryPath);
 
     const bundled = await result.outputs[0]!.text();
-    const withShaderNamesFollowed = renameAttributeAndUniformLookups(inlineWebglConstants(bundled), glsl.renames);
+    const withShaderNamesFollowed = renameWebglLookups(inlineWebglConstants(bundled), glsl.renames);
 
     const { code } = await minify(withShaderNamesFollowed, {
         toplevel: true,
         compress: { passes: 3 },
-        mangle: { reserved: elementIdsThatAreAlsoGlobals },
+        mangle: { reserved: globalElementIDs },
     });
     return code!;
 }
@@ -268,17 +269,17 @@ const html = new HTMLRewriter()
             script.replace(`<script>${code}</script>`, { html: true });
         },
     })
-    .transform(pageWithoutCommentsOrWhitespaceBetweenTags);
+    .transform(strippedPage);
 
-function escapeOnlyCharactersThatBreakDataUris(html: string) {
+function escapeBrokenCharacters(html: string) {
     return html.replaceAll("%", "%25").replaceAll("#", "%23").replaceAll("\n", "%0A");
 }
 
-function encodeAsDataUri(html: string) {
-    return "data:text/html," + escapeOnlyCharactersThatBreakDataUris(html);
+function createDataUri(html: string) {
+    return "data:text/html," + escapeBrokenCharacters(html);
 }
 
-const uri = encodeAsDataUri(html);
+const uri = createDataUri(html);
 
 mkdirSync("dist", { recursive: true });
 writeFileSync("dist/index.html", html);
