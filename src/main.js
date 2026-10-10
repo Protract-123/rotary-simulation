@@ -127,13 +127,12 @@ let rps = 0;
 let throttle = 0;
 
 let shaftAngle = 0
+let drawType = gl.TRIANGLES;
 
 function draw(timeMs) {
-    f.innerText = `mouse = rotate\nclick = start\nw/s = accel\nRPM = ${rps * 9.549 | 0}`
-
+    f.innerText = `mouse = rotate\nclick = start\nw/s = accel\nt/r = mode\nRPM = ${rps * 9.549 | 0}`
     gl.vertexAttrib3f(rotationAndShaftAngleLocation, xrot, yrot, shaftAngle)
-
-    gl.drawArrays(gl.TRIANGLES, 0, positions.length / 4);
+    gl.drawArrays(drawType, 0, positions.length / 4);
     requestAnimationFrame(draw);
 }
 
@@ -186,5 +185,5 @@ onmousemove = event => {
 
 onclick = () => {rps ||= 1; audioContext.resume();}
 
-onkeydown = event => throttle = { w: 1, s: -1 }[event.key] || 0
+onkeydown = event => {throttle = { w: 1, s: -1 }[event.key] || 0; drawType = {t: gl.TRIANGLES, r: gl.LINES}[event.key] || drawType}
 onkeyup = () => throttle = 0
