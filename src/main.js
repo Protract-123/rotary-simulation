@@ -19,6 +19,7 @@ const RADICAND_COEFF = RATIO ** 2;
 const SEGMENTS = 1000;
 const DEPTH = 70;
 const CASE_THICKNESS = 10
+const PORT_SIZE = 20
 
 // Engine Components
 const gear = (radius, teeth) => t => {
@@ -28,15 +29,15 @@ const gear = (radius, teeth) => t => {
 
 const epitrochoid = t => [cos, sin].map(f => ECCENTRICITY * f(3 * t) + RADIUS * f(t));
 
-function rotorFlank(t) {
+const rotorFlank = t => {
     const flankScale = sqrt(1 - RADICAND_COEFF * sin(3 * t) ** 2);
 
     return [cos, sin].map(f =>
         RADIUS * f(2 * t) + HARMONIC_SHIFT * (f(8 * t) - f(-4 * t)) + ECCENTRICITY * flankScale * (f(5 * t) + f(-t))
     );
-}
+};
 
-function epitrochoidCase(epitrochoidPositions) {
+const epitrochoidCase = epitrochoidPositions => {
     const [peakX, peakY] = epitrochoidPositions.reduce((highest, point) => point[1] > highest[1] ? point : highest);
 
     const inner = epitrochoidPositions.map(([x, y]) => abs(x) < abs(peakX) ? [x, sign(y) * peakY] : [x, y]);
@@ -51,38 +52,44 @@ function epitrochoidCase(epitrochoidPositions) {
             y - (nextX - prevX) / len * CASE_THICKNESS,
         ];
     });
-}
+};
 
 // Model Functions
 const positions = [];
 
-function curve(f, x0 = 0, span = 2 * PI) {
-    return Array.from({ length: SEGMENTS + 1 }, (_, i) => f(x0 + span * i / SEGMENTS));
-}
+const curve = (f, x0 = 0, span = 2 * PI) =>
+    Array.from({ length: SEGMENTS + 1 }, (_, i) => f(x0 + span * i / SEGMENTS));
 
-function quad(a, b, c, d, eccentricity) {
+const quad = (a, b, c, d, eccentricity) => {
     for (const [[x, y], z] of [a, b, c, a, c, d]) {
         positions.push(x, y, z, eccentricity);
     }
-}
+};
 
-function extrude(outer, inner, eccentricity = 0) {
-    const h = DEPTH / 2;
-    if (inner) extrude(inner, 0, eccentricity);
+const extrude = (outer, inner, eccentricity = 0, z0 = DEPTH/2, z1 = -z0) => {
+    if (inner) extrude(inner, 0, eccentricity, z0, z1);
     for (let i = 0; i < SEGMENTS; i++) {
         const p0 = outer[i], p1 = outer[i + 1];
-        quad([p0, -h], [p1, -h], [p1, h], [p0, h], eccentricity);
+        const isEdgeOfGap = p0 && !(p1 && outer.at(i - 1));
+        if (inner && isEdgeOfGap) quad([p0, z1], [inner[i], z1], [inner[i], z0], [p0, z0], eccentricity);
+        if (!p0 || !p1) continue;
+        quad([p0, z1], [p1, z1], [p1, z0], [p0, z0], eccentricity);
         if (!inner) continue;
-        for (const z of [-h, h]) {
+        for (const z of [z1, z0]) {
             quad([p0, z], [p1, z], [inner[i + 1], z], [inner[i], z], eccentricity);
         }
     }
-}
+};
 
 // Rendering
 const housing = curve(epitrochoid);
-extrude(housing, epitrochoidCase(housing));
-extrude(curve(gear(2 * ECCENTRICITY, TEETH_COUNT)), curve(() => [0, 0, 0]));    // stationary gear
+const casing = epitrochoidCase(housing);
+
+for (const s of [-1, 1]) extrude(housing, casing, 0, s * (DEPTH / 2), s * PORT_SIZE);
+housing.map(([x, y], i) => y > 0 && abs(abs(x) - 70) < 10 && (housing[i] = casing[i] = 0));
+extrude(housing, casing, 0, PORT_SIZE);
+
+extrude(curve(gear(2 * ECCENTRICITY, TEETH_COUNT)), curve(() => [0, 0]));    // stationary gear
 
 const internalGear = gear(3 * ECCENTRICITY, ROTOR_TEETH);
 for (let flank = 0; flank < 3; flank++) {
@@ -90,9 +97,8 @@ for (let flank = 0; flank < 3; flank++) {
     extrude(rotor, rotor.map(([x, y]) => internalGear(atan2(y, x))), ECCENTRICITY);
 }
 
-const canvas = c;
-canvas.width = canvas.height = 800 * devicePixelRatio;
-const gl = canvas.getContext('webgl2');
+c.width = c.height = 800 * devicePixelRatio;
+const gl = c.getContext('webgl2');
 
 const program = gl.createProgram();
 [vertexShaderSource, fragmentShaderSource].forEach((source, index) => {
@@ -129,14 +135,14 @@ let throttle = 0;
 let shaftAngle = 0
 let drawType = gl.TRIANGLES;
 
-function draw(timeMs) {
+const draw = () => {
     f.innerText = `mouse = rotate\nclick = start\nw/s = accel\nt/r = mode\nRPM = ${rps * 9.549 | 0}`
     gl.vertexAttrib3f(rotationAndShaftAngleLocation, xrot, yrot, shaftAngle)
     gl.drawArrays(drawType, 0, positions.length / 4);
     requestAnimationFrame(draw);
-}
+};
 
-requestAnimationFrame(draw);
+draw();
 
 // Audio
 
@@ -183,7 +189,13 @@ onmousemove = event => {
     yrot = (event.x / innerWidth - .5) * PI
 }
 
-onclick = () => {rps ||= 1; audioContext.resume();}
+onclick = () => {
+    rps ||= 1; audioContext.resume();
+}
 
-onkeydown = event => {throttle = { w: 1, s: -1 }[event.key] || 0; drawType = {t: gl.TRIANGLES, r: gl.LINES}[event.key] || drawType}
+onkeydown = event => {
+    throttle = { w: 1, s: -1 }[event.key] || 0;
+    drawType = {t: gl.TRIANGLES, r: gl.LINES}[event.key] || drawType
+}
+
 onkeyup = () => throttle = 0
