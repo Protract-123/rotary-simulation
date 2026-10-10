@@ -1,7 +1,7 @@
 import vertexShaderSource from "./vertex.glsl" with { type: "text" };
 import fragmentShaderSource from "./fragment.glsl" with { type: "text" };
 
-const { PI, cos, sin, asin, abs, sign, sqrt, hypot, atan2, random, tanh, exp } = Math;
+const { PI, cos, sin, asin, abs, sign, sqrt, hypot, atan2, random, exp } = Math;
 
 // Rotor Constants
 const RADIUS = 160
@@ -26,64 +26,38 @@ const gear = (radius, teeth) => t => {
     return [r * cos(t), r * sin(t)];
 };
 
-const epitrochoid = t => [
-    ECCENTRICITY * cos(3 * t) + RADIUS * cos(t),
-    ECCENTRICITY * sin(3 * t) + RADIUS * sin(t)
-];
+const epitrochoid = t => [cos, sin].map(f => ECCENTRICITY * f(3 * t) + RADIUS * f(t));
 
 function rotorFlank(t) {
     const flankScale = sqrt(1 - RADICAND_COEFF * sin(3 * t) ** 2);
 
-    return [
-        RADIUS * cos(2 * t) + HARMONIC_SHIFT * (cos(8 * t) - cos(4 * t)) + ECCENTRICITY * flankScale * (cos(5 * t) + cos(t)),
-        RADIUS * sin(2 * t) + HARMONIC_SHIFT * (sin(8 * t) + sin(4 * t)) + ECCENTRICITY * flankScale * (sin(5 * t) - sin(t))
-    ];
+    return [cos, sin].map(f =>
+        RADIUS * f(2 * t) + HARMONIC_SHIFT * (f(8 * t) - f(-4 * t)) + ECCENTRICITY * flankScale * (f(5 * t) + f(-t))
+    );
 }
 
 function epitrochoidCase(epitrochoidPositions) {
-    let peakY = -Infinity, peakX = 0
+    const [peakX, peakY] = epitrochoidPositions.reduce((highest, point) => point[1] > highest[1] ? point : highest);
 
-    for (const [x, y] of epitrochoidPositions) {
-        if (y > peakY) {
-            peakY = y;
-            peakX = abs(x)
-        }
-    }
+    const inner = epitrochoidPositions.map(([x, y]) => abs(x) < abs(peakX) ? [x, sign(y) * peakY] : [x, y]);
 
-    const inner = epitrochoidPositions.map(([x, y]) => {
-        if (abs(x) < peakX) return [x, sign(y) * peakY]
-        return [x, y]
-    })
+    return inner.map(([x, y], i) => {
+        const [prevX, prevY] = inner[(i + SEGMENTS - 1) % SEGMENTS];
+        const [nextX, nextY] = inner[(i + 1) % SEGMENTS];
+        const len = hypot(nextX - prevX, nextY - prevY);
 
-    const n = inner.length - 1
-    const outer = []
-
-    for (let i = 0; i < n; i++) {
-        const prev = inner[(i - 1 + n) % n]
-        const next = inner[(i + 1) % n]
-        const tx = next[0] - prev[0]
-        const ty = next[1] - prev[1]
-        const len = hypot(tx, ty)
-
-        outer.push([
-            inner[i][0] + ty / len * CASE_THICKNESS,
-            inner[i][1] - tx / len * CASE_THICKNESS,
-        ])
-    }
-    outer.push(outer[0])
-
-    return outer
+        return [
+            x + (nextY - prevY) / len * CASE_THICKNESS,
+            y - (nextX - prevX) / len * CASE_THICKNESS,
+        ];
+    });
 }
 
 // Model Functions
 const positions = [];
 
 function curve(f, x0 = 0, span = 2 * PI) {
-    const points = [];
-    for (let i = 0; i <= SEGMENTS; i++) {
-        points.push(f(x0 + span * i / SEGMENTS));
-    }
-    return points;
+    return Array.from({ length: SEGMENTS + 1 }, (_, i) => f(x0 + span * i / SEGMENTS));
 }
 
 function quad(a, b, c, d, eccentricity) {
@@ -94,7 +68,7 @@ function quad(a, b, c, d, eccentricity) {
 
 function extrude(outer, inner, eccentricity = 0) {
     const h = DEPTH / 2;
-    if (inner) extrude(inner, null, eccentricity);
+    if (inner) extrude(inner, 0, eccentricity);
     for (let i = 0; i < SEGMENTS; i++) {
         const p0 = outer[i], p1 = outer[i + 1];
         quad([p0, -h], [p1, -h], [p1, h], [p0, h], eccentricity);
@@ -121,9 +95,9 @@ canvas.width = canvas.height = 800 * devicePixelRatio;
 const gl = canvas.getContext('webgl2');
 
 const program = gl.createProgram();
-for (const [type, source] of [[gl.VERTEX_SHADER, vertexShaderSource], [gl.FRAGMENT_SHADER, fragmentShaderSource]]) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
+[vertexShaderSource, fragmentShaderSource].forEach((source, index) => {
+    const shader = gl.createShader(gl.VERTEX_SHADER - index);
+    gl.shaderSource(shader, "#version 300 es\n" + source);
     gl.compileShader(shader);
 
     // Development only, removed by build script.
@@ -132,36 +106,39 @@ for (const [type, source] of [[gl.VERTEX_SHADER, vertexShaderSource], [gl.FRAGME
     }
 
     gl.attachShader(program, shader);
-}
+});
 gl.linkProgram(program);
 gl.useProgram(program);
 
-const positionLoc = gl.getAttribLocation(program, 'position');
+const positionLocation = 0;
 gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-gl.enableVertexAttribArray(positionLoc);
-gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(positionLocation);
+gl.vertexAttribPointer(positionLocation, 4, gl.FLOAT, false, 0, 0);
 
-const rotationAndShaftAngleUniform = gl.getUniformLocation(program, 'rotationAndShaftAngle');
+const rotationAndShaftAngleLocation = 1;
 
 gl.enable(gl.DEPTH_TEST);
 
 let xrot = 0
 let yrot = 0
-let rps = 2*PI // 60RPM
-let scrollDirection = 0;
+
+let rps = 0;
+let throttle = 0;
+
 let shaftAngle = 0
 let previousTimeMs = 0
 
 function draw(timeMs) {
-    if (scrollDirection === -1) rps /= 2
-    else if (scrollDirection === 1) rps *= 2
-    scrollDirection = 0
+    if (rps) {
+        shaftAngle += rps * (timeMs - previousTimeMs) / 1000
+        rps += (timeMs-previousTimeMs) * throttle * 0.1
+        rps = rps < 1.1 ? 1.1 : (rps > 1256.7 ? 1256.7 : rps)
+    }
+    f.innerText = `mouse = rotate\nclick = start\nw/s = accel\nRPM = ${rps * 9.549 | 0}`
 
-    shaftAngle += rps * (timeMs - previousTimeMs) / 1000
     previousTimeMs = timeMs
-
-    gl.uniform3f(rotationAndShaftAngleUniform, xrot, yrot, shaftAngle)
+    gl.vertexAttrib3f(rotationAndShaftAngleLocation, xrot, yrot, shaftAngle)
 
     gl.drawArrays(gl.TRIANGLES, 0, positions.length / 4);
     requestAnimationFrame(draw);
@@ -169,27 +146,18 @@ function draw(timeMs) {
 
 requestAnimationFrame(draw);
 
-onmousemove = event => {
-    xrot = (.5 - event.y / innerHeight) * PI;
-    yrot = (event.x / innerWidth - .5) * PI
-}
-
-onwheel = event => scrollDirection = sign(event.deltaY)
-
 // Audio
 
 const audioContext = new AudioContext({sampleRate: 48000});
 const soundProcessor = audioContext.createScriptProcessor(0, 0, 1)
 soundProcessor.connect(audioContext.destination);
-onclick = () => audioContext.resume();
 
-let soundPhase = 0;
-let pulseStrength = 0;
+let soundPhase = .75;
 let timingJitter = 1;
-let lowCut = 0;           // one-pole lowpass state, subtracted for a ~300 Hz low cut
-let resonanceLow = 0;     // body resonance (state-variable filter, ~310 Hz)
+let lowCut = 0;
+let resonanceLow = 0;
 let resonanceBand = 0;
-let edgeLowpass = 0;      // two one-pole lowpasses whose difference keeps only the pulse edge
+let edgeLowpass = 0;
 let edgeSmooth = 0;
 
 
@@ -197,20 +165,29 @@ soundProcessor.onaudioprocess = event => {
     const output = event.outputBuffer.getChannelData(0)
     for (let i = 0; i < output.length; ++i) {
         const phase = (soundPhase + rps / (2 * PI * 48000) * timingJitter) % 1
-        if (phase < soundPhase) {
-            pulseStrength = .9 + random()/10
-            timingJitter = 1 + (random() - .5) / 50;
-        }
+        if (phase < soundPhase) timingJitter = 1 + (random() - .5) / 50;
         soundPhase = phase
 
-        const pulses = pulseStrength * (exp(-8 * phase) + .6 * exp(-8 * ((phase + .45) % 1)));
+        const pulses =  (exp(-13 * phase));
 
-        lowCut += .04 * (pulses - lowCut);
-        resonanceLow += .04 * resonanceBand;
-        resonanceBand += .04 * (pulses - lowCut - resonanceLow - .12 * resonanceBand);
+        lowCut += .05 * (pulses - lowCut);
+        resonanceLow += .03 * resonanceBand;
+        resonanceBand += .03 * (pulses - lowCut - resonanceLow - .12 * resonanceBand);
         edgeLowpass += .1 * (pulses - edgeLowpass);
         edgeSmooth += .4 * (pulses - edgeSmooth);
 
-        output[i] = 3.5 * (tanh(.35 * resonanceLow + .2) - .2 + .08 * (edgeLowpass - edgeSmooth));
+        output[i] = 2 * resonanceLow + .3 * (edgeLowpass - edgeSmooth);
     }
 }
+
+// Interactivity
+
+onmousemove = event => {
+    xrot = (.5 - event.y / innerHeight) * PI;
+    yrot = (event.x / innerWidth - .5) * PI
+}
+
+onclick = () => {rps ||= 1; audioContext.resume();}
+
+onkeydown = event => throttle = { w: 1, s: -1 }[event.key] || 0
+onkeyup = () => throttle = 0

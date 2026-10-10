@@ -1,7 +1,5 @@
-#version 300 es
-
-in vec4 position;
-uniform vec3 rotationAndShaftAngle;
+layout(location = 0) in vec4 position;
+layout(location = 1) in vec3 rotationAndShaftAngle;
 out vec3 viewPosition;
 
 mat2 rotate(float angle) {

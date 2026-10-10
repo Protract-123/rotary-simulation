@@ -241,7 +241,8 @@ const strippedPage = new HTMLRewriter()
     .on("[id]", { element: element => void globalElementIDs.push(element.getAttribute("id")!) })
     .on("script[src]", { element: element => void scriptSources.push(element.getAttribute("src")!) })
     .transform(readFileSync("src/index.html", "utf8"))
-    .replace(/>\s+</g, "><")
+    .replace(/\s+/g, " ")
+    .replace(/> </g, "><")
     .trim();
 
 async function bundleAndMinifyScript(entryPath: string) {
