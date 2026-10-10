@@ -1,7 +1,7 @@
 import vertexShaderSource from "./vertex.glsl" with { type: "text" };
 import fragmentShaderSource from "./fragment.glsl" with { type: "text" };
 
-const { PI, cos, sin, asin, abs, sign, sqrt, hypot, atan2 } = Math;
+const { PI, cos, sin, asin, abs, sign, sqrt, hypot, atan2, random, tanh, exp } = Math;
 
 // Rotor Constants
 const RADIUS = 160
@@ -142,9 +142,7 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 gl.enableVertexAttribArray(positionLoc);
 gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
 
-const timeUniform = gl.getUniformLocation(program, 'time');
-const rotationUniform = gl.getUniformLocation(program, 'rotation');
-const rpsUniform = gl.getUniformLocation(program, 'rps');
+const rotationAndShaftAngleUniform = gl.getUniformLocation(program, 'rotationAndShaftAngle');
 
 gl.enable(gl.DEPTH_TEST);
 
@@ -152,15 +150,18 @@ let xrot = 0
 let yrot = 0
 let rps = 2*PI // 60RPM
 let scrollDirection = 0;
+let shaftAngle = 0
+let previousTimeMs = 0
 
 function draw(timeMs) {
     if (scrollDirection === -1) rps /= 2
     else if (scrollDirection === 1) rps *= 2
     scrollDirection = 0
 
-    gl.uniform1f(timeUniform, timeMs / 1000);
-    gl.uniform2f(rotationUniform, xrot, yrot)
-    gl.uniform1f(rpsUniform, rps)
+    shaftAngle += rps * (timeMs - previousTimeMs) / 1000
+    previousTimeMs = timeMs
+
+    gl.uniform3f(rotationAndShaftAngleUniform, xrot, yrot, shaftAngle)
 
     gl.drawArrays(gl.TRIANGLES, 0, positions.length / 4);
     requestAnimationFrame(draw);
@@ -174,3 +175,42 @@ onmousemove = event => {
 }
 
 onwheel = event => scrollDirection = sign(event.deltaY)
+
+// Audio
+
+const audioContext = new AudioContext({sampleRate: 48000});
+const soundProcessor = audioContext.createScriptProcessor(0, 0, 1)
+soundProcessor.connect(audioContext.destination);
+onclick = () => audioContext.resume();
+
+let soundPhase = 0;
+let pulseStrength = 0;
+let timingJitter = 1;
+let lowCut = 0;           // one-pole lowpass state, subtracted for a ~300 Hz low cut
+let resonanceLow = 0;     // body resonance (state-variable filter, ~310 Hz)
+let resonanceBand = 0;
+let edgeLowpass = 0;      // two one-pole lowpasses whose difference keeps only the pulse edge
+let edgeSmooth = 0;
+
+
+soundProcessor.onaudioprocess = event => {
+    const output = event.outputBuffer.getChannelData(0)
+    for (let i = 0; i < output.length; ++i) {
+        const phase = (soundPhase + rps / (2 * PI * 48000) * timingJitter) % 1
+        if (phase < soundPhase) {
+            pulseStrength = .9 + random()/10
+            timingJitter = 1 + (random() - .5) / 50;
+        }
+        soundPhase = phase
+
+        const pulses = pulseStrength * (exp(-8 * phase) + .6 * exp(-8 * ((phase + .45) % 1)));
+
+        lowCut += .04 * (pulses - lowCut);
+        resonanceLow += .04 * resonanceBand;
+        resonanceBand += .04 * (pulses - lowCut - resonanceLow - .12 * resonanceBand);
+        edgeLowpass += .1 * (pulses - edgeLowpass);
+        edgeSmooth += .4 * (pulses - edgeSmooth);
+
+        output[i] = 3.5 * (tanh(.35 * resonanceLow + .2) - .2 + .08 * (edgeLowpass - edgeSmooth));
+    }
+}

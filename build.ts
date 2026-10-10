@@ -265,9 +265,7 @@ const html = new HTMLRewriter()
     .on("script[src]", {
         element(script) {
             const code = minifiedScripts.get(script.getAttribute("src")!)!;
-            script.removeAttribute("src");
-            script.removeAttribute("type");
-            script.setInnerContent(code, { html: true });
+            script.replace(`<script>${code}</script>`, { html: true });
         },
     })
     .transform(pageWithoutCommentsOrWhitespaceBetweenTags);

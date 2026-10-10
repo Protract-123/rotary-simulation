@@ -1,9 +1,7 @@
 #version 300 es
 
-in vec4 position; // w: eccentricity
-uniform float time;
-uniform vec2 rotation;
-uniform float rps;
+in vec4 position;
+uniform vec3 rotationAndShaftAngle;
 out vec3 viewPosition;
 
 mat2 rotate(float angle) {
@@ -11,18 +9,14 @@ mat2 rotate(float angle) {
 }
 
 void main() {
-    vec3 pos = position.xyz;
+    viewPosition = position.xyz;
 
-    // Rotor parts turn at a third of shaft speed while orbiting the shaft.
-    if (position.w > 0.0) {
-        float shaft = rps * time;
-        pos.xy = rotate(shaft / 3.0 + 1.0472) * pos.xy    // + PI / 3
-               + position.w * vec2(cos(shaft), sin(shaft));
-    }
+    if (position.w > 0.0)
+        viewPosition.xy = rotate(rotationAndShaftAngle.z / 3.0) * viewPosition.xy
+                        - position.w * rotate(rotationAndShaftAngle.z)[0];
 
-    pos.xz *= rotate(rotation.y);    // y axis rotation
-    pos.yz *= rotate(rotation.x);    // x axis rotation
+    viewPosition.xz *= rotate(rotationAndShaftAngle.y);
+    viewPosition.yz *= rotate(rotationAndShaftAngle.x);
 
-    viewPosition = pos;
-    gl_Position = vec4(pos.xy / 250.0, -pos.z / 400.0, 1.0);
+    gl_Position = vec4(viewPosition.xy, -viewPosition.z, 250);
 }
