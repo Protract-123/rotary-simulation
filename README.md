@@ -27,3 +27,7 @@ bun run build
 
 ### Screenshot
 ![preview image of rotary-simulation](sim.png)
+
+### License
+
+rotary-simulation is released under the [MIT License](LICENSE).
