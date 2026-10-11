@@ -1,6 +1,5 @@
 {
   "name": "rotary-simulation",
-  "module": "build.ts",
   "type": "module",
   "private": true,
   "scripts": {
@@ -8,12 +7,8 @@
     "build": "bun build.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
+    "@types/bun": "latest",
+    "terser": "^5.51.2",
     "typescript": "^7"
-  },
-  "dependencies": {
-    "terser": "^5.51.2"
   }
 }

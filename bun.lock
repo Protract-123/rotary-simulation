@@ -4,13 +4,9 @@
   "workspaces": {
     "": {
       "name": "rotary-simulation",
-      "dependencies": {
-        "terser": "^5.51.2",
-      },
       "devDependencies": {
         "@types/bun": "latest",
-      },
-      "peerDependencies": {
+        "terser": "^5.51.2",
         "typescript": "^7",
       },
     },
