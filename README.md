@@ -8,7 +8,8 @@ A tiny rotary simulation for [shrink](https://shrink.hackclub.com/).
 - Event hooks for user control of the simulation
 - Tested on Firefox and Chrome
 
-To try the simulation out, copy the contents of [uri.txt](./dist/uri.txt) into a browser search bar
+To try the simulation out, copy the contents of [uri.txt](./dist/uri.txt) into a browser search bar.  
+You can see some of the math behind the simulation on [desmos](https://www.desmos.com/calculator/dbaxm233my).
 
 ### Building
 Prerequisites: [Bun](https://bun.sh/), [Git](https://git-scm.com/)
