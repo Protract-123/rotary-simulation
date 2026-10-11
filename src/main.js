@@ -26,7 +26,7 @@ const PORT_HALF_WIDTH = 10;
 // Simulation Constants
 const CANVAS_SIZE = 800;
 const SAMPLE_RATE = 48000;
-const AUDIO_BUFFER_SIZE = 256;
+const AUDIO_BUFFER_SIZE = 512;
 const ACCELERATION = 100;
 const MIN_SHAFT_SPEED = 1.1;
 const MAX_SHAFT_SPEED = 1256.7;
